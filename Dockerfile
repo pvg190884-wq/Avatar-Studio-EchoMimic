@@ -2,7 +2,7 @@ FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /workspace
 
-RUN apt-get update && apt-get install -y ffmpeg git git-lfs && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg git git-lfs wget && rm -rf /var/lib/apt/lists/*
 ENV FFMPEG_PATH=/usr/bin
 
 RUN git clone https://github.com/antgroup/echomimic_v2.git /workspace/echomimic_v2
@@ -14,17 +14,22 @@ RUN apt-get remove -y python3-blinker || true && \
     sed -i 's/onnxruntime-gpu==1.20.1/onnxruntime-gpu==1.16.3/' requirements.txt && \
     pip install --no-cache-dir -r requirements.txt
 
-# Веса модели с HuggingFace (BadToBest/EchoMimicV2). ВАЖНО: конфиг
-# configs/prompts/infer.yaml, зашитый в репозиторий, ссылается на
-# конкретные относительные пути к весам (pretrained_vae_path,
-# pretrained_base_model_path, motion_module_path, pose_encoder_path,
-# audio_model_path) — эта команда скачивает веса в pretrained_weights/
-# как в оригинальном README проекта. Если после сборки инференс падает
-# с "file not found" на одном из этих путей — открой
-# configs/prompts/infer.yaml внутри контейнера и сверь пути с реальной
-# структурой папок, которую создал snapshot_download.
+# Веса модели. ВАЖНО (обнаружено на реальном тесте): BadToBest/EchoMimicV2
+# сам по себе НЕ содержит рабочих sd-vae-ft-mse и
+# sd-image-variations-diffusers — в нём это пустые папки-заглушки.
+# Официальный README требует докачать эти две модели отдельно с их
+# собственных HuggingFace-репозиториев поверх основного скачивания, plus
+# Whisper tiny.pt для audio_processor (см. linux_setup.sh апстрима).
+# Без этого шага infer.py падает на самом первом обращении к VAE:
+# "OSError: ...sd-vae-ft-mse is not the path to a directory containing
+# a config.json file".
 RUN pip install --no-cache-dir "huggingface_hub[cli]" && \
-    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='BadToBest/EchoMimicV2', local_dir='pretrained_weights')"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='BadToBest/EchoMimicV2', local_dir='pretrained_weights')" && \
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='stabilityai/sd-vae-ft-mse', local_dir='pretrained_weights/sd-vae-ft-mse')" && \
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='lambdalabs/sd-image-variations-diffusers', local_dir='pretrained_weights/sd-image-variations-diffusers')" && \
+    mkdir -p pretrained_weights/audio_processor && \
+    wget -O pretrained_weights/audio_processor/tiny.pt \
+      https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt
 
 # Патч: зацикливание pose-последовательности + снятие лишнего
 # ограничения по длине клипа числом файлов в pose-папке (см. сам
