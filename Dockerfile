@@ -8,7 +8,8 @@ ENV FFMPEG_PATH=/usr/bin
 RUN git clone https://github.com/antgroup/echomimic_v2.git /workspace/echomimic_v2
 WORKDIR /workspace/echomimic_v2
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN sed -i 's/onnxruntime-gpu==1.20.1/onnxruntime-gpu==1.16.3/' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Веса модели с HuggingFace (BadToBest/EchoMimicV2). ВАЖНО: конфиг
 # configs/prompts/infer.yaml, зашитый в репозиторий, ссылается на
