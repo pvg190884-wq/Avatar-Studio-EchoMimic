@@ -8,7 +8,10 @@ ENV FFMPEG_PATH=/usr/bin
 RUN git clone https://github.com/antgroup/echomimic_v2.git /workspace/echomimic_v2
 WORKDIR /workspace/echomimic_v2
 
-RUN sed -i 's/onnxruntime-gpu==1.20.1/onnxruntime-gpu==1.16.3/' requirements.txt && \
+# Удаляем системный blinker, чтобы pip мог поставить свою версию,
+# и фиксируем onnxruntime-gpu на совместимой версии 1.16.3
+RUN apt-get remove -y python3-blinker || true && \
+    sed -i 's/onnxruntime-gpu==1.20.1/onnxruntime-gpu==1.16.3/' requirements.txt && \
     pip install --no-cache-dir -r requirements.txt
 
 # Веса модели с HuggingFace (BadToBest/EchoMimicV2). ВАЖНО: конфиг
