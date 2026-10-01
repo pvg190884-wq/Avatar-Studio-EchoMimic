@@ -40,7 +40,7 @@ RUN python /workspace/echomimic_v2/patch_echomimic_pose_loop.py
 
 # transformers/librosa/soundfile — для автоопределения эмоции по аудио
 # в Кейсе 2 Pro (см. handler.py, detect_emotion_from_audio)
-RUN pip install --no-cache-dir transformers librosa soundfile runpod
+RUN pip install --no-cache-dir transformers librosa soundfile runpod Pillow
 
 # Прогреваем кэш модели распознавания эмоций на этапе сборки образа —
 # чтобы холодный старт воркера не тратил время на скачивание весов
@@ -49,6 +49,6 @@ RUN python -c "from transformers import pipeline; pipeline('audio-classification
 
 RUN mkdir -p /workspace/tmp
 
-COPY handler.py /workspace/echomimic_v2/handler.py 
+COPY handler.py /workspace/echomimic_v2/handler.py
 
 CMD ["python", "-u", "handler.py"]
