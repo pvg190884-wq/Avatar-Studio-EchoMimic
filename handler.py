@@ -83,8 +83,14 @@ def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
     os.makedirs(ref_images_dir, exist_ok=True)
     os.makedirs(audio_dir, exist_ok=True)
 
-    refimg_name = "ref.png"
-    audio_name = "audio.wav"
+    # ВАЖНО (обнаружено на реальном тесте): refimg_name/audio_name должны
+    # содержать хотя бы один уровень подпапки — infer.py строит ref_flag
+    # через split('/')[-2], и при плоском имени файла без подпапки падает
+    # с IndexError: list index out of range.
+    refimg_name = "sample/ref.png"
+    audio_name = "sample/audio.wav"
+    os.makedirs(os.path.join(ref_images_dir, "sample"), exist_ok=True)
+    os.makedirs(os.path.join(audio_dir, "sample"), exist_ok=True)
     shutil.copy(image_path, os.path.join(ref_images_dir, refimg_name))
     shutil.copy(audio_path, os.path.join(audio_dir, audio_name))
 
