@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import uuid
 
+from PIL import Image
 import runpod
 
 REPO_DIR = "/workspace/echomimic_v2"
@@ -67,6 +68,24 @@ def resolve_pose_name(emotion: str | None, audio_path: str) -> str:
     return EMOTION_TO_POSE.get(detected, DEFAULT_POSE)
 
 
+def compute_target_dimensions(image_path: str, max_side: int = 768) -> tuple[int, int]:
+    """НАЙДЕНО НА РЕАЛЬНОМ ТЕСТЕ: infer.py по умолчанию работает в
+    квадрате 768x768 и просто растягивает входное фото под эти размеры
+    без сохранения пропорций — отсюда сильные искажения (плывущий текст
+    на фоне, деформированные пропорции тела) у любого непортретного-1:1
+    фото. Вместо дефолтного квадрата считаем -W/-H под реальное
+    соотношение сторон конкретного фото, с большей стороной не выше
+    max_side, округляя до кратного 64 (стандартное требование для
+    diffusion U-Net внутри EchoMimicV2 — 768 само по себе кратно 64)."""
+    with Image.open(image_path) as img:
+        width, height = img.size
+
+    scale = max_side / max(width, height)
+    target_w = max(64, round(width * scale / 64) * 64)
+    target_h = max(64, round(height * scale / 64) * 64)
+    return target_w, target_h
+
+
 def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
                              max_seconds: float, fps: int = 24) -> str:
     """Запускает оригинальный infer.py EchoMimicV2 как подпроцесс.
@@ -95,6 +114,7 @@ def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
     shutil.copy(audio_path, os.path.join(audio_dir, audio_name))
 
     frame_limit = max(1, int(max_seconds * fps) + fps)  # +1 сек запаса
+    target_w, target_h = compute_target_dimensions(image_path)
 
     start_time = time.time()
     cmd = [
@@ -106,6 +126,8 @@ def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
         "--audio_name", audio_name,
         "--pose_name", pose_name,
         "-L", str(frame_limit),
+        "-W", str(target_w),
+        "-H", str(target_h),
         "--fps", str(fps),
     ]
     result = subprocess.run(cmd, cwd=REPO_DIR, capture_output=True, text=True)
