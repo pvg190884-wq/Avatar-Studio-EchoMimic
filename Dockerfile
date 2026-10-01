@@ -49,6 +49,6 @@ RUN python -c "from transformers import pipeline; pipeline('audio-classification
 
 RUN mkdir -p /workspace/tmp
 
-COPY handler.py /workspace/echomimic_v2/handler.py
+COPY handler.py /workspace/echomimic_v2/handler.py 
 
 CMD ["python", "-u", "handler.py"]
