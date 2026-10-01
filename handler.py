@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import uuid
 
-from PIL import Image
+from PIL import Image, ImageOps
 import runpod
 
 REPO_DIR = "/workspace/echomimic_v2"
@@ -68,22 +68,26 @@ def resolve_pose_name(emotion: str | None, audio_path: str) -> str:
     return EMOTION_TO_POSE.get(detected, DEFAULT_POSE)
 
 
-def compute_target_dimensions(image_path: str, max_side: int = 768) -> tuple[int, int]:
-    """НАЙДЕНО НА РЕАЛЬНОМ ТЕСТЕ: infer.py по умолчанию работает в
-    квадрате 768x768 и просто растягивает входное фото под эти размеры
-    без сохранения пропорций — отсюда сильные искажения (плывущий текст
-    на фоне, деформированные пропорции тела) у любого непортретного-1:1
-    фото. Вместо дефолтного квадрата считаем -W/-H под реальное
-    соотношение сторон конкретного фото, с большей стороной не выше
-    max_side, округляя до кратного 64 (стандартное требование для
-    diffusion U-Net внутри EchoMimicV2 — 768 само по себе кратно 64)."""
-    with Image.open(image_path) as img:
-        width, height = img.size
+def prepare_square_image(image_path: str, size: int = 768) -> None:
+    """ВТОРАЯ НАХОДКА НА РЕАЛЬНОМ ТЕСТЕ: нельзя просто передать
+    непрямоугольные -W/-H в infer.py — внутри пайплайна есть
+    pose-маска для анимации рук (tgt_musk), геометрически зашитая под
+    КВАДРАТНЫЙ холст (сами .npy pose-последовательности рассчитаны под
+    768x768) — непрямоугольный холст ломает её с ValueError при
+    наложении маски.
 
-    scale = max_side / max(width, height)
-    target_w = max(64, round(width * scale / 64) * 64)
-    target_h = max(64, round(height * scale / 64) * 64)
-    return target_w, target_h
+    Значит холст обязан остаться квадратным, но растягивать
+    прямоугольное фото под квадрат (как делает infer.py по умолчанию)
+    — и есть первопричина сильных искажений с первого теста. Решение:
+    вписываем фото в квадратный холст с полями (letterbox), сохраняя
+    пропорции и НЕ обрезая края — в отличие от обрезки по центру, это
+    гарантированно не отрежет руки, которые как раз должна анимировать
+    Pro-версия."""
+    with Image.open(image_path) as img:
+        img = img.convert("RGB")
+        squared = ImageOps.pad(img, (size, size), method=Image.LANCZOS,
+                                color=(0, 0, 0), centering=(0.5, 0.5))
+        squared.save(image_path)
 
 
 def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
@@ -112,9 +116,9 @@ def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
     os.makedirs(os.path.join(audio_dir, "sample"), exist_ok=True)
     shutil.copy(image_path, os.path.join(ref_images_dir, refimg_name))
     shutil.copy(audio_path, os.path.join(audio_dir, audio_name))
+    prepare_square_image(os.path.join(ref_images_dir, refimg_name))
 
     frame_limit = max(1, int(max_seconds * fps) + fps)  # +1 сек запаса
-    target_w, target_h = compute_target_dimensions(image_path)
 
     start_time = time.time()
     cmd = [
@@ -126,8 +130,6 @@ def run_echomimic_inference(image_path: str, audio_path: str, pose_name: str,
         "--audio_name", audio_name,
         "--pose_name", pose_name,
         "-L", str(frame_limit),
-        "-W", str(target_w),
-        "-H", str(target_h),
         "--fps", str(fps),
     ]
     result = subprocess.run(cmd, cwd=REPO_DIR, capture_output=True, text=True)
